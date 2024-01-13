@@ -11,29 +11,39 @@
 # Global variables
 ###################################################
 
-release <- "0.94" # RTutor
+release <- "0.98" # RTutor
 uploaded_data <- "User Upload" # used for drop down
 no_data <- "no_data" # no data is uploaded or selected
 names(no_data) <- "No data (examples)"
 rna_seq <- "rna_seq"  # RNA-Seq read counts
 names(rna_seq) <- "RNA-Seq"
 min_query_length <- 6  # minimum # of characters
-max_query_length <- 500 # max # of characters
+max_query_length <- 2000 # max # of characters
 #language_model <- "code-davinci-002	"# "text-davinci-003"
-language_model <- "text-davinci-003"
-default_temperature <- 0.1
-pre_text <- "Following the instructions below, write correct, efficient R code."
+language_models <- c("gpt-4-1106-preview", "gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-3.5-turbo-0301", "gpt-4", "gpt-4-0314", "text-davinci-003")
+names(language_models) <- c("GPT-4 Turbo (11/23)", "ChatGPT", "ChatGPT 16k", "ChatGPT (03/23)", "GPT-4", "GPT-4 (03/23)", "Davinci")
+default_model <- "GPT-4 Turbo (11/23)"   # "ChatGPT" #   "GPT-4 (03/23)"
+max_content_length <- 3000 # max tokens:  Change according to model !!!!
+max_content_length_ask <- 3000 # max tokens:  Change according to model !!!!
+default_temperature <- 0.2
+pre_text <- "Write correct, efficient R code to analyze data."
 pre_text_python <- "Write correct, efficient Python code."
 after_text <- "Use the df data frame."
-max_char_question <- 280 # max n. of characters in the Q&A
-max_levels <- 12 # max number of levels in categorical varaible for EDA, ggairs
+max_char_question <- 1000 # max n. of characters in the Q&A
+max_eda_levels <- 12 # max number of levels in categorical varaible for EDA, ggairs
+max_eda_var <- 20 # maximum num of variables in EDA
 max_data_points <- 10000  # max number of data points for interactive plot
-max_levels_factor_conversion <- 12 # Numeric columns will be converted to factor if less than or equal to this many levels
+max_levels_factor_conversion <- 5 # Numeric columns will be converted to factor if less than or equal to this many levels
 # if a column is numeric but only have a few unique values, treat as categorical
-unique_ratio <- 0.2   # number of unique values / total # of rows
+unique_ratio <- 0.05   # number of unique values / total # of rows
 sqlitePath <- "../../data/usage_data.db" # folder to store the user queries, generated R code, and running results
 sqltable <- "usage"
-
+system_role <- "Act as a experienced data scientist and statistician. You will write code following instructions. Do not provide explanation. 
+If the goal can be achieved by showing qantitative results, do not produce a plot. When a plot is required, ggplot2 is preferred. 
+If multiple plots are generated, try to combine them into one."
+system_role_tutor <- "Act as a professor of statistics, computer science and mathematics. 
+You will respond like answering questions by students. If the question is in languages other than English, respond in that language. 
+If the question is not remotely related to your expertise, respond with 'No comment'."
 # voice input parameters
 wake_word <- "Tutor" #Tutor, Emma, Note that "Hey Cox" does not work very well.
 # this triggers the submit button
@@ -103,9 +113,10 @@ move_front <- function(v, e){
 #' @param selected_data Name of the dataset.
 #' @param df the data frame
 #' @param use_python  whether or not using python instead of R
+#' @param chunk_id  first or not? First chunk add data description
 #'
 #' @return Returns a cleaned up version, so that it could be sent to GPT.
-prep_input <- function(txt, selected_data, df, use_python) {
+prep_input <- function(txt, selected_data, df, use_python, chunk_id, selected_model, df2 = NULL, df2_name = NULL) {
 
   if(is.null(txt) || is.null(selected_data)) {
     return(NULL)
@@ -150,12 +161,44 @@ prep_input <- function(txt, selected_data, df, use_python) {
         list_levels = TRUE, 
         relevant_var = relevant_var
       )
-
+      # Always add 'use the df data frame.'
       txt <- paste(txt, after_text)
-      # if user is not trying to convert data
-      if (!grepl("Convert |convert ", txt)) {
+
+      n_words <- tokens(data_info)
+      #if it is the first chunk;  always do this when Davinci model; or if data description is short
+      more_info <- chunk_id <= 1 || selected_model == "text-davinci-003" || n_words < 200
+
+      # in a session, sometimes the first chunk has the id of 0. sometimes 1?????
+
+      # add data descrdiption
+      # if it is not the first chunk and data description is long, do not add.
+      if (more_info && !(chunk_id > 1 && n_words > 600)) {
         txt <- paste(txt, data_info)
       }
+      
+      # if there is a second data frame, add that too.
+      if(!is.null(df2)) {
+        if(is.null(df2_name)) {
+          df2_name <- "df2"
+        } 
+
+        # 2nd data must be specificall called
+        if(grepl(df2_name, txt)) {
+          data_info_2 <- describe_df(
+            df2, 
+            list_levels = TRUE, 
+            relevant_var = relevant_var
+          )
+          data_info_2 <- gsub("df data frame", paste0(df2_name, " data frame"), data_info_2)
+
+          n_words <- tokens(data_info_2)
+          if (more_info && !(chunk_id > 1 && n_words > 600)) {
+            txt <- paste(txt, data_info_2)
+          }
+        }
+      }
+
+
     }
   }
 
@@ -167,6 +210,7 @@ prep_input <- function(txt, selected_data, df, use_python) {
     ),
     txt
   )
+
   # replace newline with space.
   txt <- gsub("\n", " ", txt)
   #cat("\n", txt)
@@ -200,6 +244,11 @@ describe_df <- function(df, list_levels = FALSE, relevant_var) {
 
       numeric_var <- colnames(df)[numeric_index]
       cat_var <- colnames(df)[!numeric_index]
+
+      # calculate total number of unique levels
+      total_levels <- sapply(cat_var, function(x) {length(unique(df[, x]))})
+      # remove columns that are names, strings, etc
+      cat_var <- cat_var[total_levels < nrow(df) * 0.8]
 
      # numeric variables
       if (length(numeric_var) == 1) {
@@ -243,54 +292,55 @@ describe_df <- function(df, list_levels = FALSE, relevant_var) {
           cat_var[length(cat_var)],
           ". "
         )
+      }
+      
+      if(list_levels & length(relevant_var) > 0) {
 
-        if(list_levels & length(relevant_var) > 0) {
+        # only list for categorical variables specified in user prompt
+        relevant_cat_var <- intersect(relevant_var, cat_var)
+      # describe the levels in categorical variable
+        for (var in relevant_cat_var) {
+          max_lelvels_description <- 4
+          ix <- match(var, colnames(df))
+          factor_levels <- sort(table(df[, ix]), decreasing = TRUE)
+          factor_levels <- names(factor_levels)
 
-          # only list for categorical variables specified in user prompt
-          relevant_cat_var <- intersect(relevant_var, cat_var)
-        # describe the levels in categorical variable
-          for (var in relevant_cat_var) {
-            max_lelvels_description <- 10
-            ix <- match(var, colnames(df))
-            factor_levels <- sort(table(df[, ix]), decreasing = TRUE)
-            factor_levels <- names(factor_levels)
+          # have more than 6 levels?
+          many_levels <- FALSE
 
-            # have more than 6 levels?
-            many_levels <- FALSE
+          if (length(factor_levels) > max_lelvels_description) {
+            many_levels <- TRUE
+            factor_levels <- factor_levels[1:max_lelvels_description]
+          }
 
-            if (length(factor_levels) > max_lelvels_description) {
-              many_levels <- TRUE
-              factor_levels <- factor_levels[1:max_lelvels_description]
-            }
-
-            last_level <- factor_levels[length(factor_levels)]
-            factor_levels <- factor_levels[-1 * length(factor_levels)]
-            tem <- paste0(
-              factor_levels,
-              collapse = "', '"
-            )
-            if (!many_levels) { # less than 6 levels
-              factor_levels <- paste0("'", tem, "', and '", last_level, "'")
-            } else { # more than 6 levels
-              factor_levels <- paste0(
-                "'",
-                tem,
-                "', '",
-                last_level,
-                "', etc"
-              )
-            }
-            data_info <- paste0(
-              data_info,
-              "The categorical variable ",
-              var,
-              " has these levels: ",
-              factor_levels,
-              ". "
+          last_level <- factor_levels[length(factor_levels)]
+          factor_levels <- factor_levels[-1 * length(factor_levels)]
+          tem <- paste0(
+            factor_levels,
+            collapse = "', '"
+          )
+          if (!many_levels) { # less than 6 levels
+            factor_levels <- paste0("'", tem, "', and '", last_level, "'")
+          } else { # more than 6 levels
+            factor_levels <- paste0(
+              "'",
+              tem,
+              "', '",
+              last_level,
+              "', etc"
             )
           }
+          data_info <- paste0(
+            data_info,
+            "The categorical variable ",
+            var,
+            " has these levels: ",
+            factor_levels,
+            ". "
+          )
         }
       }
+      
       return(data_info)
 }
 
@@ -301,8 +351,9 @@ describe_df <- function(df, list_levels = FALSE, relevant_var) {
 #'
 #' @param cmd A string that stores the completion from GTP3.
 #' @param selected_data, name of the selected dataset. 
+#' @param on_server, whether or not running on the server.
 #' @return Returns a cleaned up version, so that it could be executed as R command.
-clean_cmd <- function(cmd, selected_data) {
+clean_cmd <- function(cmd, selected_data, on_server = FALSE) {
   req(cmd)
   # simple way to check
   if(grepl("That model is currently overloaded with other requests.|Error:", cmd)) {
@@ -313,25 +364,55 @@ clean_cmd <- function(cmd, selected_data) {
   cmd <- capture.output(
     cat(cmd)
   )
-
-  #cmd is a vector. Each element is a line.
-
-  # sometimes it returns RMarkdown code.
-  cmd <- gsub("```", "", cmd)
-
-  # remove empty lines
-  cmd <- cmd[cmd != ""]
+  cmd <- polish_cmd(cmd)
 
   # replace install.packages by "#install.packages"
   cmd <- gsub("install.packages", "#install.packages", cmd)
 
-  if (selected_data != no_data) {
-    cmd <- c("df <- as.data.frame(current_data())", cmd)
+  # prevent running system commands, malicious
+  # system("...")  --> #system("...")
+  cmd <- gsub("system *\\(", "#system\\()", cmd)
+    cmd <- gsub("source *\\(", "#source\\()", cmd)
+  cmd <- gsub("unlink *\\(", "#unlink\\()", cmd)
+  cmd <- gsub(
+    "(link|dir|link)_(create|delete|chmod|chown|move) *\\(",
+    "#MASKED_FILE_OPERATION\\(", cmd
+  )
+
+  # use pacman, load if installed; otherwise install it first then load.
+  if(!on_server) {
+    cmd <- gsub("library\\(", "pacman::p_load\\(", cmd)
   }
+  #if (selected_data != no_data) {
+  #  cmd <- c("df <- as.data.frame(current_data())", cmd)
+  #}
 
   return(cmd)
 
 }
+
+
+#' Remove Markdown and explanation
+#'
+#' The response from GTP3 sometimes contains strings that are not R commands.
+#'
+#' @param cmd A string that stores the completion from GTP3.
+#' @return Returns a cleaned up version, so that it could be executed as R command.
+polish_cmd <- function(cmd) {
+
+  cmd <- gsub("``` *", "```", cmd)
+  #                    ```{python} ```{r}               ```python                    ^```
+  cmd <- gsub(".*(```\\{(PYTHON|Python|python|R|r|bash|sql|js|rcpp|css)\\}|```(PYTHON|Python|python|R|r|bash|sql|js|rcpp|css)|^```)", "", cmd)
+
+  # remove anything after ```
+  cmd <- gsub("```.*", "", cmd)
+  
+  # sometimes ChatGPT returns \r\n as new lines. The \r causes error.
+  cmd <- gsub("\r", "", cmd)
+  
+  return(paste0("\n", cmd))
+}
+
 
 
 ###################################################################
@@ -890,3 +971,89 @@ describe_data <- function(df) {
   a <- gsub(":,", ": ", a)
   return(a)
 }
+
+
+#' Estimate tokens from text
+#' 
+#'
+#' @param text a string
+#'
+#' @return a number
+#' 
+tokens <- function(text) {
+  # Approximate tokenization by splitting on spaces and punctuations
+  tokens <- unlist(strsplit(text, "[[:space:]]|[[:punct:]]"))
+  
+  # Filter out empty tokens
+  tokens <- tokens[nchar(tokens) > 0]
+  
+  # Further split longer tokens (this is a very crude approximation)
+  long_tokens <- tokens[nchar(tokens) > 3]
+  additional_tokens <- sum(nchar(long_tokens) %/% 4)
+  
+  total_tokens <- length(tokens) + additional_tokens
+  
+  return(total_tokens)
+}
+
+#' Estimate API cost
+#' 
+#'
+#' @param prompt_tokens a number
+#' @param completion_tokens a number
+#' @param selected_model a string
+#'
+#' @return a number
+#' 
+api_cost <- function(prompt_tokens, completion_tokens, selected_model) {
+  if(grepl("gpt-4", selected_model)) { # gpt4
+    # input token $0.03 / 1k token, Output is $0.06 / 1k for GPT-4
+    completion_tokens * 6e-5+ prompt_tokens  * 3e-5
+  } else {
+    # ChatGPT
+    completion_tokens * 2e-6+ prompt_tokens  * 1.5e-6 
+  }
+
+
+}
+
+#' Estimate API cost
+#' 
+#'
+#' @param df a dataframe
+#'
+#' @return a plot
+#' 
+  #ploting missing values
+  missing_values_plot <- function(df) {
+    req(!is.null(df))
+
+    # Calculate the total number of missing values per column
+    missing_values <- sapply(df, function(x) sum(is.na(x)))
+
+    # Calculate the number of cases with at least one missing value
+    cases_with_missing <- sum(apply(df, 1, function(x) any(is.na(x))))
+
+    # Check if there are any missing values
+    if (all(missing_values == 0)) {
+      return(NULL)
+    } else {
+      # Create a data frame for plotting
+      missing_data_df <- data.frame(
+        Column = c(names(missing_values), "At Least One Missing"),
+        MissingValues = c(missing_values, cases_with_missing)
+      )
+      # Calculate the percentage of missing values per column
+      # missing_percentage <- (missing_values / nrow(df)) * 100
+      # Plot the number of missing values for all columns with labels
+      ggplot(missing_data_df, aes(x = Column, y = MissingValues, fill = Column)) +
+        geom_bar(stat = "identity") +
+        geom_text(aes(label = sprintf("%.0f%%", MissingValues / nrow(df) * 100)), hjust = -5) + # Add labels to the bars
+        # geom_text(aes(label = sprintf("%.2f%%", MissingPercentage)), hjust = -0.3) +
+        coord_flip() + # Makes the bars horizontal
+        labs(title = "Number of Missing Values by Column", x = "Column", y = "Number of Missing Values") +
+        scale_fill_brewer(palette = "Set3") + # Use a color palette for different bars
+        theme(legend.position = "none", axis.title.y = element_blank()) + # Remove the legend
+        scale_y_continuous(expand = expansion(mult = c(0, 0.2))) # Extend the y-axis limits by 10%
+    }
+  }

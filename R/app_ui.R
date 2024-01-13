@@ -18,6 +18,7 @@ app_ui <- function(request) {
     navbarPage(
       "RTutor",
     #  windowTitle = "RTutor",
+    # theme = bslib::bs_theme(bootswatch = "darkly"),
       id = "tabs",
       tabPanel(
         title = "Home",
@@ -25,21 +26,27 @@ app_ui <- function(request) {
           id = "load_message",
           h2("Chat with your data via AI ..."),
         ),
-        uiOutput("use_heyshiny"),
+        #uiOutput("use_heyshiny"), # remove it
         # move notifications and progress bar to the center of screen
         tags$head(
           tags$style(
             HTML(".shiny-notification {
-                  width: 200px;
+                  width: 300px;
                   position:fixed;
-                  top: calc(10%);
+                  top: calc(90%);
                   left: calc(10%);
                   }
                   "
                 )
             )
         ),
-
+        # Embed the CSS directly in the UI
+        tags$style("
+          .modal-dialog {
+            position: absolute;
+            bottom: 0;
+          }
+        "),
         # Sidebar with a slider input for number of bins
         sidebarLayout(
           sidebarPanel(
@@ -52,8 +59,16 @@ app_ui <- function(request) {
               ),
               column(
                 width = 6,
-                style = "margin-top: -10px;",
-p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></div>"))
+                actionButton("reset_button", strong("Reset")),
+                tags$head(tags$style(
+                  "#reset_button{font-size: 16px;color: blue}"
+                )),
+                align = "right",
+                tippy::tippy_this(
+                  "reset_button",
+                  "Reset before uploading a new file. Clears data objects, chat history, and code chunks.",
+                  theme = "light-border"
+                )
               )
             ),
             fluidRow(
@@ -64,11 +79,11 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
               column(
                 width = 6,
                 uiOutput("data_upload_ui")
+                ,uiOutput("data_upload_ui_2")
               )
             ),
 
             uiOutput("prompt_ui"),
-
             tags$style(type = "text/css", "textarea {width:100%}"),
             tags$textarea(
               id = "input_text",
@@ -99,11 +114,38 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
               )
             ),
             br(),
+            textInput(
+              inputId = "ask_question",
+              label = NULL,
+              placeholder = "Q&A: Ask about the code, result, error, or statistics in general.",
+              value = ""
+            ),
+
+            tippy::tippy_this(
+              "ask_question",
+              "Walk me through this code. What does this result mean? 
+              What is this error about? Explain logistic regression. 
+              List R packages for time series analysis. 
+              Hit Enter to send the request.",
+              theme = "light-border"
+            ),
+            shinyjs::hidden(actionButton("ask_button", strong("Ask RTutor"))),
+            br(),
+            fluidRow(
+              column(
+                width = 6,
+                actionButton("data_edit_modal", "Data Types")
+              ),
+              column(
+                width = 6,
+                actionButton("data_desc_modal", "Description")
+              )
+            ),
             textOutput("usage"),
             textOutput("total_cost"),
             textOutput("temperature"),
-            uiOutput("slava_ukraini"),
-            br(),
+            #uiOutput("slava_ukraini"),
+            #br(),
             textOutput("retry_on_error"),
             checkboxInput("Comments", "Comments & questions"),
             tags$style(type = "text/css", "textarea {width:100%}"),
@@ -140,6 +182,7 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
 
           mainPanel(
             shinyjs::useShinyjs(),
+
             conditionalPanel(
               condition = "output.file_uploaded == 0 && input.submit_button == 0",
 
@@ -156,77 +199,101 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
                 ),
                 column(
                   width = 9,
-                  h5(
-                    "Chat with your data
-                    in dozens of human languages.
-                    I am still in college learning new things.
-                    But I try to be helpful.  
-                    I did finish my required reading:
-                    thousands of books, millions of code repositories, 
-                    and billions of web pages.                    
-                     "
+                  h4(
+                    "Start by watching an 8-min ",
+                    a(
+                      "YouTube video!",
+                      href="https://youtu.be/a-bZW26nK9k",
+                      target = "_blank"
+                    ),  
+                    style="color:red"
                   ),
+                  h4("Nov. 9: Switching to the new GPT-4 Turbo model.  Nov. 1: (v0.98.2): RTutor can generate ",
+                    a(
+                      "a comprehensive EDA report.",
+                      href="https://htmlpreview.github.io/?https://github.com/gexijin/gEDA/blob/main/example_report.html",
+                      target = "_blank"
+                    ),  
+                   " Oct 28 (v0.98):  Ask questions about the code, result, error, or statistics! Upload a second file.
+                  Oct 23 (v0.97): GPT-4 becomes the default.
+                  Using ggplot2 is now preferred. Consectitive data manipulation is enabled."),
+                  h4("See",
+                    a(
+                      "GitHub",
+                      href = "https://github.com/gexijin/RTutor"
+                    ),
+                    " for source code, bug reports, and instructions to install RTutor as an R package.
+                    As a small startup, we are open to partnerships with both academia and industry. 
+                  We can do demos and seminars via Zoom if time permits."
+                  ),
+                  h4("Also try ",
+                    a(
+                      "Chatlize.ai,",
+                      href="https://chatlize.ai",
+                      target = "_blank"
+                    ),
+                    " a more general platform for analyzing data through chats. Multiple files with different formats. Python support."
+                  ),
+
                   align = "left"
                 )
               ),
               hr(),
-              h3("Instructions:"),
+
+              h3("Quick start:"),
               tags$ul(
                 tags$li(
-                  "Start small. Gradually add complexity. First, try simple requests 
-                  such as distributions, basic plots, or simple models. 
-                  Then customize it or add variables. 
+                  "Explore the data at the EDA tab first.  Then start analyzing the data using simple requests 
+                  such as distributions, basic plots & simple models. Gradually add complexity.
                   ", style = "color:red"
                 ),
                 tags$li(
-                  "Releases as a prototype, it is still being developed.
-                   Please send us your valuable feedback (lower left)."
+                  "The default model is now GPT-4 Turbo, which is slower and expensive, but more accurate.
+                  In the same session, previous questions and code chunks become the context for your new request.
+                  For example, you can simply say \"Change background color to white\" to refine the
+                  plot generated by the previous chunk. You can also clean your data step by step. "
                 ),
                 tags$li(
-                  "It can take a few tries to get it correct. If it still does not
-                  work, rephrase your request. Also, increase 
-                  the \"Temperature\" setting will make the AI more aggressive in
-                  seeking alternative solutions."
-                ),
+                  "To analyze a new, unrelated dataset, or to start over, click the Reset button first. 
+                  Always delete the photos of your ex-girlfriends before chasing new ones."
+                ), 
                 tags$li(
-                  "Prepare and clean your data in Excel first! 
+                  "Prepare and clean your data in Excel first! Name columns properly. 
+                  ChatGPT tries to guess the meaning of column names, even abbrievated.
                   RTutor can only analyze traditional 
                   statistics data, where rows are 
-                  observations and columns are variables."
+                  observations and columns are variables. For complex data, try https://chatlize.ai."
                 ),
                 tags$li(
                   "Once uploaded, your data is automatically loaded into
-                  RTutor as a data frame called df. 
+                  R as a data frame called df. You do NOT need to ask RTutor to load data. 
                   Check if the data types of the columns are correct.
-                  Change if needed, especially when numbers are used to code for categories.
-                   Data types make a big difference in analysis and plots!"
+                  Change if needed, especially when numbers are used to code for categories."
                 ),
-
+                tags$li(
+                  "An additional file can be uploaded as df2 to be analyze togehter. 
+                  To use it, you must specify 'df2' in your prompts. "
+                ),
+                tags$li(
+                  "Use the Q&A box to ask questions about the code, result, or error messages. 
+                  You can ask for methods to use or develop a step by step plan. "
+                ),
                 tags$li(
                   "Before sending your request to OpenAI, we add \"Generate R code\" before it, and 
                   append something like \"Use the df data frame. 
-                  Note that hwy is numeric\" afterward. 
+                  Note that highway is numeric, ...\" afterward. 
                   If you are not using any data (plot a function or simulations),
                   choose \"No data\" from the Data dropdown."
                 ),
                 tags$li(
-                  "Your data is not sent to the AI. To ask generic questions without
-                  mentioning column names, briefly describe your data, especially 
-                  the relevant columns, just like emailing a statistician 
-                  who knows nothing about your data."
+                  "Your data is not sent to OpenAI. Nor is it stored in our webserver after the session. 
+                  If you explain the background of the data and the meaning of  
+                  the columns, you can ask general questions like asking a clueless statistician."
                 ),
                 tags$li(
-                  "Each chunk of code is run independently using your uploaded data. 
-                  If you want to build upon the current code, 
-                  select the \"Continue from this chunk\" checkbox.
-                  Your current R code will be inserted before your next chunk 
-                  and get executed. This is especially important for 
-                  data wrangling when you remove rows,
-                  add columns, or log-transform. You can go back to any previous 
-                  chunks and continue from there."
+                  "Be skeptical. The generated code can be logically wrong even if it produces results without error."
                 )
-              ),
-              hr()
+              )
             ),
             conditionalPanel(
               condition = "input.submit_button != 0",
@@ -238,19 +305,10 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
                     label = "AI generated code:",
                     selected = NULL,
                     choices = NULL
-                  )
-                ),
-                column(
-                  width = 4,
-                  style = "margin-top: 10px;",
-                  checkboxInput(
-                    inputId = "continue",
-                    label = "Continue from this chunk",
-                    value = FALSE
                   ),
                   tippy::tippy_this(
-                    "continue",
-                    "If selected, the current R scripts will be kept in the next questions. We build upon the code chunk.",
+                    "selected_chunk",
+                    "You can go back to any previous code chunk and continue from there. The data will also be reverted to that point.",
                     theme = "light-border"
                   )
                 )
@@ -260,47 +318,63 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
                 condition = "input.use_python == 0",
 
                 uiOutput("error_message"),
-                h4("Results:"),
+                #uiOutput("send_error_message"),
+                strong("Results:"),
 
                 # shows error message in local machine, but not on the server
                 verbatimTextOutput("console_output"),
                 uiOutput("plot_ui"),
-                checkboxInput(
-                  inputId = "make_ggplot_interactive",
-                  label = NULL,
-                  value = FALSE
+                fluidRow(
+                  column(
+                    width = 5,
+                    checkboxInput(
+                      inputId = "make_ggplot_interactive",
+                      label = NULL,
+                      value = FALSE
+                    ),
+                    align = "right"
+                  ),
+                  column(
+                    width = 5,
+                    checkboxInput(
+                      inputId = "make_cx_interactive",
+                      label = NULL,
+                      value = FALSE
+                    ),
+                    align = "left"
+                  )
                 ),
-                checkboxInput(
-                  inputId = "make_cx_interactive",
-                  label = NULL,
-                  value = FALSE
-                ),
-
                 br(),
                 uiOutput("tips_interactive"),
               ),
               conditionalPanel(
                 condition = "input.use_python == 1",
                 uiOutput("python_markdown")
-              ),
-
-
-              hr(),
-            ),
-
-            fluidRow(
-              column(
-                width = 3,
-                actionButton("data_edit_modal", "Data Types")
-              ),
-              column(
-                width = 3,
-                actionButton("data_desc_modal", "Description")
               )
             ),
-            br(),br(),
-            verbatimTextOutput("data_structure"),
-            #,tableOutput("data_table")
+
+            br(),
+
+            shinyjs::hidden(
+              div(
+                id = "first_file",
+                hr(),
+                h4("Default dataset:  df"),
+                textOutput("data_size"),
+                DT::dataTableOutput("data_table_DT")
+              )
+            ),
+            shinyjs::hidden(
+              div(
+                id = "second_file",
+                hr(),
+                h4("2nd dataset: df2     (Must specify, e.g. 'create a piechart of X in df2.')"),
+                textOutput("data_size_2"),
+                DT::dataTableOutput("data_table_DT_2")
+
+              )
+            )
+            #,tableOutput("data_table"),
 
 
           ) #mainPanel
@@ -308,51 +382,29 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
       ), #tabPanel
 
       tabPanel(
-        title = "Data",
-        value = "Data",
-        textOutput("data_size"),
-        DT::dataTableOutput("data_table_DT")
-      ),
-      tabPanel(
-        title = "Report",
-        value = "Report",
-        br(),
-        selectInput(
-          inputId = "selected_chunk_report",
-          label = "Code chunks to include:",
-          selected = NULL,
-          choices = NULL,
-          multiple = TRUE
-        ),
-        fluidRow(
-          column(
-            width = 6,
-            uiOutput("html_report")
-          ),
-          column(
-            width = 6,
-            downloadButton(
-              outputId = "Rmd_source",
-              label = "RMarkdown"
-            ),
-            tippy::tippy_this(
-              "Rmd_source",
-              "Download a R Markdown source file.",
-              theme = "light-border"
-            )
-          )
-        ),
-        br(),
-        verbatimTextOutput("rmd_chunk_output")
-      ),
-
-      tabPanel(
         title = "EDA",
         value = "EDA",
         tabsetPanel(
           tabPanel(
             title = "Basic",
-            verbatimTextOutput("data_summary")
+            h4("Data structure: df"),
+            verbatimTextOutput("data_structure"),
+            hr(),
+            h4("Data summary: df"),
+            verbatimTextOutput("data_summary"),
+            plotly::plotlyOutput("missing_values", width = "60%"),
+            shinyjs::hidden(
+              div(
+                id = "second_file_summary",
+                br(),hr(),
+                h4("Data structure: df2"),
+                verbatimTextOutput("data_structure_2"),
+                br(),hr(),
+                h4("Data summary: df2"),
+                verbatimTextOutput("data_summary_2"),
+                plotly::plotlyOutput("missing_values_2", width = "60%")
+              )
+            )
           ),
           tabPanel(
             title = "Summary",
@@ -381,6 +433,7 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
               "package."
             )
           ),
+
           tabPanel(
             title = "Categorical",
             h4(
@@ -418,7 +471,7 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
                 href="https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html",
                 target = "_blank"
               ),
-              "package."
+              "package. Blanks indicate no significant correlations."
             ),
             plotOutput("corr_map")
           ),
@@ -427,7 +480,7 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
             uiOutput("ggpairs_inputs"),
             h4(""),
             h4(
-              "Please wait for 30 seconds. Generated by the ggpairs() functions in the",
+              "Please wait 1 minutes for this plot to be generated by the ggpairs() functions in the",
               a(
                 "GGally",
                 href="https://cran.r-project.org/web/packages/GGally/index.html",
@@ -436,53 +489,49 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
               "package."
             ),
             plotOutput("ggpairs")
+          ),
+          tabPanel(
+            title = "EDA Reports",
+            h4("Comprehensive EDA (exploratory data analysis)"),
+            uiOutput("eda_report_ui")
           )
         )
       ),
 
       tabPanel(
-        title = "Ask",
-        value = "Ask",
-        img(
-          src = "www/tutor.jpg",
-          width = "344",
-          height = "309"
+        title = "Report",
+        value = "Report",
+        br(),
+        selectInput(
+          inputId = "selected_chunk_report",
+          label = "Code chunks to include:",
+          selected = NULL,
+          choices = NULL,
+          multiple = TRUE
         ),
-        br(), br(),
         fluidRow(
           column(
-            width = 7,
-            tags$style(type = "text/css", "textarea {width:100%}"),
-            tags$textarea(
-              id = "ask_question",
-              placeholder = NULL,
-              rows = 2,
-              ""
-            )
+            width = 6,
+            uiOutput("html_report")
           ),
           column(
-            width = 5,
-            selectInput(
-              inputId = "demo_question",
-              choices = demo_questions,
-              label = NULL
+            width = 6,
+            downloadButton(
+              outputId = "Rmd_source",
+              label = "RMarkdown"
+            ),
+            tippy::tippy_this(
+              "Rmd_source",
+              "Download a R Markdown source file.",
+              theme = "light-border"
             )
           )
         ),
-
-        actionButton("ask_button", strong("Ask RTutor")),
         br(),
-        hr(),
-        wellPanel(textOutput("answer")),
-        tags$head(
-          tags$style(
-            "#answer{
-              color: purple;
-              font-size: 16px
-            }"
-          )
-        )
+        verbatimTextOutput("rmd_chunk_output")
       ),
+
+
 
       tabPanel(
         title = "About",
@@ -494,9 +543,7 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
             href = "https://openai.com/",
             target = "_blank"
           ),
-          " powerful ",
-          language_model,
-          "language model",
+          " powerful large language models",
           " to translate natural language into R code, which is then excuted.",
           "You can request your analysis,
           just like asking a real person.",
@@ -504,28 +551,24 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
           and just analyze it in plain English. 
           Your results can be downloaded as an HTML report in minutes!"
         ),
-        p("NO WARRANTY! Some of the scripts run but yield incorrect result. 
+        p("NO WARRANTY! Some of the scripts run but may yield incorrect result. 
         Please use the auto-generated code as a starting 
-        point for further refinement and validation.
-          The RTutor.ai website and the 
-          source code (CC BY-NC 3.0 license) are freely 
-          availble for academic and 
-          non-profit organizations only. 
-          Commercial use beyond testing please contact ",
-        a(
-          "gexijin@gmail.com.",
-          href = "mailto:gexijin@gmail.com?Subject=RTutor"
-          )
+        point for further refinement and validation."
         ),
 
         hr(),
-        p(" Personal project by Dr. ",
+        p(" Written by Dr. Steven Ge",
           a(
-            "Steven Ge.",
+            "(Twitter, ",
             href = "https://twitter.com/StevenXGe",
             target = "_blank"
           ),
-          " For feedback, please email",
+          a(
+            "LinkedIn),",
+            href = "https://www.linkedin.com/in/steven-ge-ab016947/",
+            target = "_blank"
+          ),       
+          " as part of RTutor LLC. For feedback, please email",
           a(
             "gexijin@gmail.com.",
             href = "mailto:gexijin@gmail.com?Subject=RTutor"
@@ -536,11 +579,167 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
             href = "https://github.com/gexijin/RTutor"
           ),
           " from where you can also find 
-          instruction to install RTutor as an R package."
+          instruction to install RTutor as an R package. 
+          The RTutor website and the source code is free for non-profit organizations ONLY. Licensing is required for commercial use."
         ),
+        h4("For businesses, RTutor can be customized and locally installed to  
+        easily gain insights from your data (files, SQL databases, or APIs) at a low cost. We will be happy to discuss."),
+
+        hr(),
+        p("RTutor went viral on ", 
+            a(
+              "LinkedIn, ",
+              href = "https://www.linkedin.com/feed/update/urn:li:activity:7008179918844956672/"
+            ), 
+            a(
+              "Twitter, ",
+              href = "https://twitter.com/StevenXGe/status/1604861481526386690"
+            ),
+            a(
+              "Twitter(Physacourses),",
+              href = "https://twitter.com/Physacourses/status/1602730176688832513?s=20&t=z4fA3IPNuXylm3Vj8NJM1A"
+            ),
+            " and ",
+            a(
+              "Facebook (Carlo Pecoraro).",
+              href = "https://www.facebook.com/physalia.courses.7/posts/1510757046071330"
+            )
+        ),
+
+        hr(),
+
+        uiOutput("package_list"),
+
+        hr(),
+
+        h3("Frequently asked questions:"),
+
+        h5("1.	What is RTutor?"),
+        p("It is an artificial intelligence (AI)-based app that enables 
+        users to interact with your data via natural language.
+        After uploading a 
+        dataset, users ask questions about or request analyses in 
+        English. The app generates and runs R code to answer that question 
+        with plots and numeric results."),
+
+        h5("2.	How does RTutor work?"),
+        p("The requests are structured and sent to OpenAI’s AI
+        system, which returns R code. The R code is cleaned up and 
+        executed in a Shiny 
+        environment, showing results or error messages. Multiple 
+        requests are logged to produce an R Markdown file, which can be
+          knitted into an HTML report. This enables record keeping 
+          and reproducibility."),
+
+        h5("3. Is my data uploaded to OpenAI?"),
+        p("No. The column names of your data, not the data itself, is sent to OpenAI as a prompt to generate R code. Your data is not stored in our server after the session."),
+
+        h5("4.	Who is it for?"),
+        p("The primary goal is to help people with some R experience to learn
+        R or be more productive. RTutor can be used to quickly speed up the 
+        coding process using R. It gives you a draft code to test and 
+        refine. Be wary of bugs and errors. "),
+
+        h5("5.	How do you make sure the results are correct? "),
+        p("Try to word your question differently. And try 
+        the same request several time. A higher temperature parameter will give 
+        diverse choices. Then users can double-check to see 
+        if you get the same results from different runs."),
+
+        h5("6.	Can you use RTutor to do R coding homework?"),
+        p("No. That will defy the purpose. You need to learn
+        R coding properly to be able to tell if the generated 
+        R coding is correct.  "),
+
+        h5("7.	Can private companies use RTutor? "),
+        p("No. It can be tried as a demo. RTutor website 
+        dnd source code are freely available for non-profit organizations
+        only and distributed using the CC NC 3.0 license."),
+
+        h5("8.	Can you run RTutor locally?"),
+        p("Yes. Download the R package and install it locally. 
+        Then you need to obtain an API key from OpenAI."),
+
+        h5("9.	Why do I get different results with the same request? "),
+        p("OpenAI’s language model has a certain degree of randomness 
+        that could be adjusted by parameters called \"temperature\". 
+        Set this in  Settings"),
+
+        h5("10.	Can people without R coding experience use RTutor for statistical analysis? "),
+        p("Not entirely. This is because the generated code can be wrong.
+        However, it could be used to quickly conduct data 
+        visualization, and exploratory data analysis (EDA). 
+        Just be mindful of this experimental technology. "),
+
+        h5("11.	Can this replace statisticians or data scientists?"),
+        p("No. But RTutor can make them more efficient."),
+
+        h5("12.	How do I  write my request effectively?"),
+        p("Imagine you have a summer intern, 
+        a collge student 
+        who took one semester of statistics and R. You send the 
+        intern emails with instructions and he/she sends 
+        back code and results. The intern is not experienced, 
+        thus error-prone, but is hard working. Thanks to AI, this
+        intern is lightning fast and nearly free."),
+
+        h5("13. Can I install R package in the AI generated code?"),
+        p("No. But we are working to pre-install all the R
+          packages on the server! Right now we finished the top 5000 most 
+          frequently used R packages. Chances are that your favorite package
+          is already installed."),
+
+        h5("14. Can I upload big files to the site?"),
+        p("Not if it is more than 10MB. Try to get a small portion of your data. 
+        Upload it to the site to get the code, which can be run locally on your 
+        laptop. Alternatively, download RTutor R package, and use it from your
+        own computer."),
+
+
+        h5("15. Voice input does not work!"),
+        p("One of the main reason
+        is that your browser block the website site from accessing the microphone. 
+        Make sure you access the site using",
+        a(
+          "https://RTutor.ai.",
+          href = "https://RTutor.ai"
+        ),
+        "With http, mic access is automatically blocked in Chrome.
+        Speak closer to the mic. Make sure there 
+        is only one browser tab using the mic. "),
+
+        h5("16. Is that your photo? "),
+        p("No. I am an old guy. The photo was synthesized by AI. 
+        Using prompts \'statistics tutor\', the image was generated by ",
+        a(
+          "Stable Diffusion 2.0.",
+          href = "https://stability.ai/"
+        ),
+        "If you look carefully, you can see that her fingers are messed up."),
+
+
         hr(),
         h4("Update log:"),
         tags$ul(
+           tags$li(
+            "v0.98.3  11/1/2023. Fix issue with EDA report when the target variable is categorical or not specified."
+          ),  
+           tags$li(
+            "v0.98.2  11/1/2023. Comprehensive EDA report!"
+          ),           
+          tags$li(
+            "v 0.98  10/28/2023. Ask questions about code, error. Second data file upload."
+          ),          
+          tags$li(
+            "v 0.97  10/23/2023. GPT-4 becomes the default. Make ggplot2 a preferred method for plotting.
+             Use R environment to enable successive data manipulation."
+          ),
+          tags$li(
+            "v 0.96  9/26/2023. Include column names in all requests. GPT-4 is available."
+          ),
+          tags$li(
+            "v 0.95  6/11/2023. ChatGPT(gpt-3.5-turbo) becomes default model."
+          ),
           tags$li(
             "v 0.94  4/21/2023. Interactive plots using CanvasXpress."
           ),
@@ -606,158 +805,6 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
             "V0.1 12/11/2022. Initial launch"
           )
         ),
-
-        hr(),
-        h4("RTutor went viral!"),
-        tags$ul(
-          tags$li(
-            a(
-              "LinkedIn",
-              href = "https://www.linkedin.com/feed/update/urn:li:activity:7008179918844956672/"
-            )
-          ),
-          tags$li(
-            a(
-              "Twitter",
-              href = "https://twitter.com/StevenXGe/status/1604861481526386690"
-            )
-          ),
-          tags$li(
-            a(
-              "Twitter(Physacourses)",
-              href = "https://twitter.com/Physacourses/status/1602730176688832513?s=20&t=z4fA3IPNuXylm3Vj8NJM1A"
-          )
-          ),
-          tags$li(
-            a(
-              "Facebook (Carlo Pecoraro)",
-              href = "https://www.facebook.com/physalia.courses.7/posts/1510757046071330"
-            )
-          )
-        ),
-        hr(),
-        uiOutput("package_list"),
-
-        hr(),
-
-        h4("Frequently asked questions:"),
-
-        h5("1.	What is RTutor?"),
-        p("It is an artificial intelligence (AI)-based app that enables 
-        users to interact with your data via natural language.
-        After uploading a 
-        dataset, users ask questions about or request analyses in 
-        English. The app generates and runs R code to answer that question 
-        with plots and numeric results."),
-
-        h5("2.	How does RTutor work?"),
-        p("The requests are structured and sent to OpenAI’s AI
-        system, which returns R code. The R code is cleaned up and 
-        executed in a Shiny 
-        environment, showing results or error messages. Multiple 
-        requests are logged to produce an R Markdown file, which can be
-          knitted into an HTML report. This enables record keeping 
-          and reproducibility."),
-
-        h5("3.	Can people without R coding experience use RTutor for statistical analysis? "),
-        p("Not entirely. This is because the generated code can be wrong.
-        However, it could be used to quickly conduct data 
-        visualization, and exploratory data analysis (EDA). 
-        Just be mindful of this experimental technology. "),
-
-        h5("4.	Who is it for?"),
-        p("The primary goal is to help people with some R experience to learn
-        R or be more productive. RTutor can be used to quickly speed up the 
-        coding process using R. It gives you a draft code to test and 
-        refine. Be wary of bugs and errors. "),
-
-        h5("5.	How do you make sure the results are correct? "),
-        p("Try to word your question differently. And try 
-        the same request several time. A higher temperature parameter will give 
-        diverse choices. Then users can double-check to see 
-        if you get the same results from different runs."),
-
-        h5("6.	Can you use RTutor to do R coding homework?"),
-        p("No. That will defy the purpose. You need to learn
-        R coding properly to be able to tell if the generated 
-        R coding is correct.  "),
-
-        h5("7.	Can private companies use RTutor? "),
-        p("No. It can be tried as a demo. RTutor website 
-        dnd source code are freely available for non-profit organizations
-        only and distributed using the CC NC 3.0 license."),
-
-        h5("8.	Can you run RTutor locally?"),
-        p("Yes. Download the R package and install it locally. 
-        Then you need to obtain an API key from OpenAI."),
-
-        h5("9.	Why do I get different results with the same request? "),
-        p("OpenAI’s language model has a certain degree of randomness 
-        that could be adjusted by parameters called \"temperature\". 
-        Set this in  Settings"),
-
-        h5("10.	How much does the OpenAI’s cost per session?"),
-        p("About $0.01 to $0.1, if you send 10 to 50 requests. We have a
-        monthly usage limit. Once that is exceeded, the website will
-          not work for the month. If you use it regularly, please use 
-          your API key. Currently, RTutor receives no funding. 
-          We might ask users to contribute later.
-          "),
-
-        h5("11.	Can this replace statisticians or data scientists?"),
-        p("No. But RTutor can make them more efficient."),
-
-        h5("12.	How do I  write my request effectively?"),
-        p("Imagine you have a summer intern, 
-        a collge student 
-        who took one semester of statistics and R. You send the 
-        intern emails with instructions and he/she sends 
-        back code and results. The intern is not experienced, 
-        thus error-prone, but is hard working. Thanks to AI, this
-        intern is lightning fast and nearly free."),
-
-        h5("13. Can I install R package in the AI generated code?"),
-        p("No. But we are working to pre-install all the R
-          packages on the server! Right now we finished the top 5000 most 
-          frequently used R packages. Chances are that your favorite package
-          is already installed."),
-
-        h5("14. Can I upload big files to the site?"),
-        p("Not if it is more than 10MB. Try to get a small portion of your data. 
-        Upload it to the site to get the code, which can be run locally on your 
-        laptop. Alternatively, download RTutor R package, and use it from your
-        own computer."),
-
-        h5("15. The server is busy. Or the website is stuck!"),
-        p("Start a new browser window, not another tab. You will be assigned
-        to a new worker process. You can also try our mirror site ",
-        a(
-          "http://149.165.170.244/",
-          href = "http://149.165.170.244/"
-        )
-        ),
-
-        h5("16. Voice input does not work!"),
-        p("One of the main reason
-        is that your browser block the website site from accessing the microphone. 
-        Make sure you access the site using",
-        a(
-          "https://RTutor.ai.",
-          href = "https://RTutor.ai"
-        ),
-        "With http, mic access is automatically blocked in Chrome.
-        Speak closer to the mic. Make sure there 
-        is only one browser tab using the mic. "),
-
-        h5("17. Is that your photo? "),
-        p("No. I am an old guy. The photo was synthesized by AI. 
-        Using prompts \'statistics tutor\', the image was generated by ",
-        a(
-          "Stable Diffusion 2.0.",
-          href = "https://stability.ai/"
-        ),
-        "If you look carefully, you can see that her fingers are messed up."),
-
         hr(),
         uiOutput("session_info")
       ),
@@ -772,9 +819,6 @@ p(HTML("<div align=\"right\"> <A HREF=\"javascript:history.go(0)\">Reset</A></di
     ),
 
     tags$head(includeHTML(app_sys("app", "www", "ga.html")))
-    ,tags$head(includeScript(app_sys("app", "www", "ga.js")))
-    # old covid tracker called "virus"
-
   )
 }
 
@@ -800,7 +844,7 @@ golem_add_external_resources <- function() {
     ),
     bundle_resources(
       path = app_sys("app/www"),
-      app_title = "RTutor"
+      app_title = "RTutor 0.98"
     )
     # Add here other external resources
     # for example, you can add shinyalert::useShinyalert()
